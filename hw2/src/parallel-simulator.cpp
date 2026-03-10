@@ -3,6 +3,7 @@
 #include "quad-tree.h"
 #include <algorithm>
 #include <iostream>
+#include <omp.h>
 
 // TASK 2
 
@@ -108,11 +109,12 @@ public:
         // using quadTree as acceleration structure
         auto qtree = static_cast<QuadTree*>(accel);
         int n = particles.size();
-        #pragma omp parallel
-        {
-            std::vector<Particle> local_ps;
-            local_ps.reserve(64);
-            if (n < 10000){
+        int threads = omp_get_max_threads();
+        if (n < 10000){
+            #pragma omp parallel num_threads(8)
+            {
+                std::vector<Particle> local_ps;
+                local_ps.reserve(64);
                 #pragma omp for schedule(static)
                 for(int i = 0; i < n; i++){
                     Particle& p = particles[i];
@@ -130,7 +132,12 @@ public:
                     }
                 }
             }
-            else{
+        }
+        else{
+            #pragma omp parallel
+            {
+                std::vector<Particle> local_ps;
+                local_ps.reserve(64);
                 #pragma omp for schedule(dynamic, 64)
                 for(int i = 0; i < n; i++){
                     Particle& p = particles[i];
