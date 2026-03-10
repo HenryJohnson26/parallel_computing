@@ -10,6 +10,7 @@
 // and type of simulateStep and buildAccelerationStructure remain the same.
 
 const int QuadTreeLeafSize = 8;
+const int QuadTreeParallelThreshold = 1024;
 class ParallelNBodySimulator : public INBodySimulator
 {
 public:
@@ -38,23 +39,28 @@ public:
             }
 
             // TODO: check that depth isn't too far down
-            if (depth <= 4){
-                #pragma omp task shared(nonleaf)
-                nonleaf->children[0] = buildQuadTree(q0, bmin, pivot, depth +1);
-                #pragma omp task shared(nonleaf)
-                nonleaf->children[1] = buildQuadTree(q1, Vec2(pivot.x, bmin.y), Vec2(bmax.x, pivot.y), depth +1);
-                #pragma omp task shared(nonleaf)
-                nonleaf->children[2] = buildQuadTree(q2, Vec2(bmin.x, pivot.y), Vec2(pivot.x, bmax.y), depth +1);
-                #pragma omp task shared(nonleaf)
-                nonleaf->children[3] = buildQuadTree(q3, pivot, bmax, depth +1);
+           // Only spawn tasks if there's enough work to justify the overhead
+            if (particles.size() >= QuadTreeParallelThreshold) {
+                #pragma omp task shared(nonleaf) firstprivate(q0, bmin, pivot, depth)
+                nonleaf->children[0] = buildQuadTree(q0, bmin, pivot, depth + 1);
+
+                #pragma omp task shared(nonleaf) firstprivate(q1, bmin, bmax, pivot, depth)
+                nonleaf->children[1] = buildQuadTree(q1, Vec2(pivot.x, bmin.y), Vec2(bmax.x, pivot.y), depth + 1);
+
+                #pragma omp task shared(nonleaf) firstprivate(q2, bmin, bmax, pivot, depth)
+                nonleaf->children[2] = buildQuadTree(q2, Vec2(bmin.x, pivot.y), Vec2(pivot.x, bmax.y), depth + 1);
+
+                #pragma omp task shared(nonleaf) firstprivate(q3, bmin, bmax, pivot, depth)
+                nonleaf->children[3] = buildQuadTree(q3, pivot, bmax, depth + 1);
+
                 #pragma omp taskwait
+            } else {
+                nonleaf->children[0] = buildQuadTree(q0, bmin, pivot, depth + 1);
+                nonleaf->children[1] = buildQuadTree(q1, Vec2(pivot.x, bmin.y), Vec2(bmax.x, pivot.y), depth + 1);
+                nonleaf->children[2] = buildQuadTree(q2, Vec2(bmin.x, pivot.y), Vec2(pivot.x, bmax.y), depth + 1);
+                nonleaf->children[3] = buildQuadTree(q3, pivot, bmax, depth + 1);
             }
-            else{
-                nonleaf->children[0] = buildQuadTree(q0, bmin, pivot, depth +1);
-                nonleaf->children[1] = buildQuadTree(q1, Vec2(pivot.x, bmin.y), Vec2(bmax.x, pivot.y), depth +1);
-                nonleaf->children[2] = buildQuadTree(q2, Vec2(bmin.x, pivot.y), Vec2(pivot.x, bmax.y), depth +1);
-                nonleaf->children[3] = buildQuadTree(q3, pivot, bmax, depth +1);
-            }
+
 
             return nonleaf;
        }
