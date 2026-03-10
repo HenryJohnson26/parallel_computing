@@ -109,44 +109,48 @@ public:
         auto qtree = static_cast<QuadTree*>(accel);
         int n = particles.size();
         #pragma omp parallel
-        std::vector<Particle> local_ps;
+        {
+            std::vector<Particle> local_ps;
+            local_ps.reserve(64);
+            if (n < 10000){
+                #pragma omp for schedule(static)
+                for(int i = 0; i < n; i++){
+                    Particle& p = particles[i];
+                    local_ps.clear();
+                    qtree->getParticles(local_ps, p.position, params.cullRadius);
+                    int n = local_ps.size();
+                    {
+                        Vec2 force(0.0f, 0.0f);
+                        for (auto & other : local_ps){
+                            if(other.id != p.id){
+                                force = force + computeForce(p, other, params.cullRadius);
+                            }
+                        }
+                        newParticles[i] = updateParticle(p, force, params.deltaTime);
+                    }
+                }
+            }
+            else{
+                #pragma omp for schedule(dynamic, 64)
+                for(int i = 0; i < n; i++){
+                    Particle& p = particles[i];
+                    local_ps.clear();
+                    qtree->getParticles(local_ps, p.position, params.cullRadius);
+                    int n = local_ps.size();
+                    {
+                        Vec2 force(0.0f, 0.0f);
+                        for (auto & other : local_ps){
+                            if(other.id != p.id){
+                                force = force + computeForce(p, other, params.cullRadius);
+                            }
+                        }
+                        newParticles[i] = updateParticle(p, force, params.deltaTime);
+                    }
+                }
+            }
+        }
 
-        if (n < 10000){
-            #pragma omp parallel for schedule(static)
-            for(int i = 0; i < (int)particles.size(); i++){
-                Particle& p = particles[i];
-                local_ps.clear();
-                qtree->getParticles(local_ps, p.position, params.cullRadius);
-                int n = local_ps.size();
-                {
-                    Vec2 force(0.0f, 0.0f);
-                    for (auto & other : local_ps){
-                        if(other.id != p.id){
-                            force = force + computeForce(p, other, params.cullRadius);
-                        }
-                    }
-                    newParticles[i] = updateParticle(p, force, params.deltaTime);
-                }
-            }
-        }
-        else{
-            #pragma omp parallel for schedule(dynamic, 64)
-            for(int i = 0; i < (int)particles.size(); i++){
-                Particle& p = particles[i];
-                local_ps.clear();
-                qtree->getParticles(local_ps, p.position, params.cullRadius);
-                int n = local_ps.size();
-                {
-                    Vec2 force(0.0f, 0.0f);
-                    for (auto & other : local_ps){
-                        if(other.id != p.id){
-                            force = force + computeForce(p, other, params.cullRadius);
-                        }
-                    }
-                    newParticles[i] = updateParticle(p, force, params.deltaTime);
-                }
-            }
-        }
+
     }
 };
 
