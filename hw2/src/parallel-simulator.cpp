@@ -10,7 +10,7 @@
 // and type of simulateStep and buildAccelerationStructure remain the same.
 
 const int QuadTreeLeafSize = 8;
-const int QuadTreeParallelThreshold = 1024;
+const int QuadTreeParallelThreshold = 10000;
 class ParallelNBodySimulator : public INBodySimulator
 {
 public:
@@ -108,21 +108,43 @@ public:
         // using quadTree as acceleration structure
         auto qtree = static_cast<QuadTree*>(accel);
         int n = particles.size();
+        #pragma omp parallel
+        std::vector<Particle> local_ps;
 
-        #pragma omp parallel for schedule(dynamic, 64)
-        for(int i = 0; i < (int)particles.size(); i++){
-            auto p = particles[i];
-            std::vector<Particle> local_ps;
-            qtree->getParticles(local_ps, p.position, params.cullRadius);
-            int n = local_ps.size();
-            {
-                Vec2 force(0.0f, 0.0f);
-                for (auto & other : local_ps){
-                    if(other.id != p.id){
-                        force = force + computeForce(p, other, params.cullRadius);
+        if (n < 10000){
+            #pragma omp parallel for schedule(static)
+            for(int i = 0; i < (int)particles.size(); i++){
+                Particle& p = particles[i];
+                local_ps.clear();
+                qtree->getParticles(local_ps, p.position, params.cullRadius);
+                int n = local_ps.size();
+                {
+                    Vec2 force(0.0f, 0.0f);
+                    for (auto & other : local_ps){
+                        if(other.id != p.id){
+                            force = force + computeForce(p, other, params.cullRadius);
+                        }
                     }
+                    newParticles[i] = updateParticle(p, force, params.deltaTime);
                 }
-                newParticles[i] = updateParticle(p, force, params.deltaTime);
+            }
+        }
+        else{
+            #pragma omp parallel for schedule(dynamic, 64)
+            for(int i = 0; i < (int)particles.size(); i++){
+                Particle& p = particles[i];
+                local_ps.clear();
+                qtree->getParticles(local_ps, p.position, params.cullRadius);
+                int n = local_ps.size();
+                {
+                    Vec2 force(0.0f, 0.0f);
+                    for (auto & other : local_ps){
+                        if(other.id != p.id){
+                            force = force + computeForce(p, other, params.cullRadius);
+                        }
+                    }
+                    newParticles[i] = updateParticle(p, force, params.deltaTime);
+                }
             }
         }
     }
