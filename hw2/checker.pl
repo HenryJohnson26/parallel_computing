@@ -59,9 +59,9 @@ if (defined $options{p}) {
             
             process_implementation(@scene_names[$i], "Reference Sequential", "-seq", "./nbody-ref", $i);
             print "\n";
-            process_implementation(@scene_names[$i], "Parallel", "-par", "./nbody-ref", $i);
+            process_implementation(@scene_names[$i], "Parallel", "-par", "./nbody-release", $i);
             print "\n";
-            process_implementation(@scene_names[$i], "Sequential", "-seq", "./nbody-ref", $i);
+            process_implementation(@scene_names[$i], "Sequential", "-seq", "./nbody-release", $i);
     }
     print_summary();
 }
