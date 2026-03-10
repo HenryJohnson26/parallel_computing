@@ -3,6 +3,7 @@
 #include "quad-tree.h"
 #include <algorithm>
 #include <iostream>
+#include<omp.h>
 
 // TASK 2
 
@@ -15,7 +16,7 @@ class ParallelNBodySimulator : public INBodySimulator
 public:
     // TODO: implement a function that builds and returns a quadtree containing particles.
     // You do not have to preserve this function type.
-    std::shared_ptr<QuadTreeNode> buildQuadTree(std::vector<Particle> & particles, Vec2 bmin, Vec2 bmax, int depth)
+    std::shared_ptr<QuadTreeNode> buildQuadTree(std::vector<Particle> & particles, Vec2 bmin, Vec2 bmax, int depth, int maxdepth)
     {
         if (particles.size()<QuadTreeLeafSize){
             // return leaf node
@@ -38,22 +39,22 @@ public:
             }
 
             // TODO: check that depth isn't too far down
-            if (depth <= 4){
+            if (depth <= maxdepth){
                 #pragma omp task shared(nonleaf)
-                nonleaf->children[0] = buildQuadTree(q0, bmin, pivot, depth +1);
+                nonleaf->children[0] = buildQuadTree(q0, bmin, pivot, depth +1, maxdepth);
                 #pragma omp task shared(nonleaf)
-                nonleaf->children[1] = buildQuadTree(q1, Vec2(pivot.x, bmin.y), Vec2(bmax.x, pivot.y), depth +1);
+                nonleaf->children[1] = buildQuadTree(q1, Vec2(pivot.x, bmin.y), Vec2(bmax.x, pivot.y), depth +1, maxdepth);
                 #pragma omp task shared(nonleaf)
-                nonleaf->children[2] = buildQuadTree(q2, Vec2(bmin.x, pivot.y), Vec2(pivot.x, bmax.y), depth +1);
+                nonleaf->children[2] = buildQuadTree(q2, Vec2(bmin.x, pivot.y), Vec2(pivot.x, bmax.y), depth +1, maxdepth);
                 #pragma omp task shared(nonleaf)
-                nonleaf->children[3] = buildQuadTree(q3, pivot, bmax, depth +1);
+                nonleaf->children[3] = buildQuadTree(q3, pivot, bmax, depth +1, maxdepth);
                 #pragma omp taskwait
             }
             else{
-                nonleaf->children[0] = buildQuadTree(q0, bmin, pivot, depth +1);
-                nonleaf->children[1] = buildQuadTree(q1, Vec2(pivot.x, bmin.y), Vec2(bmax.x, pivot.y), depth +1);
-                nonleaf->children[2] = buildQuadTree(q2, Vec2(bmin.x, pivot.y), Vec2(pivot.x, bmax.y), depth +1);
-                nonleaf->children[3] = buildQuadTree(q3, pivot, bmax, depth +1);
+                nonleaf->children[0] = buildQuadTree(q0, bmin, pivot, depth +1, maxdepth);
+                nonleaf->children[1] = buildQuadTree(q1, Vec2(pivot.x, bmin.y), Vec2(bmax.x, pivot.y), depth +1, maxdepth);
+                nonleaf->children[2] = buildQuadTree(q2, Vec2(bmin.x, pivot.y), Vec2(pivot.x, bmax.y), depth +1, maxdepth);
+                nonleaf->children[3] = buildQuadTree(q3, pivot, bmax, depth +1, maxdepth);
             }
 
             return nonleaf;
@@ -81,10 +82,12 @@ public:
         quadTree->bmin = bmin;
         quadTree->bmax = bmax;
 
+        int n = particles.size();
         #pragma omp parallel
         #pragma omp single
         // build nodes
-        quadTree->root = buildQuadTree(particles, bmin, bmax, 0);
+        quadTree->root = buildQuadTree(particles, bmin, bmax, 0, std::max(1, (int)(log2(n / (omp_get_max_threads() * QuadTreeLeafSize)))));
+
         if (!quadTree->checkTree()) {
           std::cout << "Your Tree has Error!" << std::endl;
         }
@@ -102,7 +105,9 @@ public:
         // using quadTree as acceleration structure
         auto qtree = static_cast<QuadTree*>(accel);
 
-        #pragma omp parallel for schedule(dynamic, 64)
+        int n = particles.size();
+        #pragma omp parallel
+        #pragma omp parallel for schedule(dynamic, std::max(1, (int)(n / (omp_get_num_threads() * 8))))
         for(int i = 0; i < (int)particles.size(); i++){
             auto& p = particles[i];
             thread_local std::vector<Particle> local_ps;
