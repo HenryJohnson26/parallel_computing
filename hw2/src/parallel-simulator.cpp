@@ -103,7 +103,7 @@ public:
         auto qtree = static_cast<QuadTree*>(accel);
         int n = particles.size();
 
-        #pragma omp parallel for schedule(dynamic, n/64)
+        #pragma omp parallel for schedule(dynamic, 64)
         for(int i = 0; i < (int)particles.size(); i++){
             auto p = particles[i];
             std::vector<Particle> local_ps;
