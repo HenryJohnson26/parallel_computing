@@ -17,14 +17,14 @@ class ParallelNBodySimulator : public INBodySimulator
 public:
     // TODO: implement a function that builds and returns a quadtree containing particles.
     // You do not have to preserve this function type.
-    std::shared_ptr<QuadTreeNode> buildQuadTree(std::vector<Particle> & particles, Vec2 bmin, Vec2 bmax)
+    std::shared_ptr<QuadTreeNode> buildQuadTree(std::vector<Particle> particles, Vec2 bmin, Vec2 bmax)
     {
         int n = particles.size();
         if (n<QuadTreeLeafSize){
         // return leaf node
         auto leaf = std::make_shared<QuadTreeNode>();
         leaf->isLeaf = true;
-        leaf->particles = particles;
+        leaf->particles = std::move(particles);
         return leaf;
        }
        else{
@@ -34,21 +34,22 @@ public:
         for (auto & p : particles) {
             bool right = p.position.x >= pivot.x;
             bool below = p.position.y >= pivot.y;
-            if (!right && !below) q0.push_back(p); // top-left
-            else if ( right && !below) q1.push_back(p); // top-right
-            else if (!right &&  below) q2.push_back(p); // bottom-left
-            else q3.push_back(p); // bottom-right
+            if (!right && !below) q0.push_back(std::move(p)); // top-left
+            else if ( right && !below) q1.push_back(std::move(p)); // top-right
+            else if (!right &&  below) q2.push_back(std::move(p)); // bottom-left
+            else q3.push_back(std::move(p)); // bottom-right
         }
 
         if(n>QuadTreeParallelThreshold){
             #pragma omp task shared(nonleaf)
-            nonleaf->children[0] = buildQuadTree(q0, bmin, pivot);
+            nonleaf->children[0] = buildQuadTree(std::move(q0), bmin, pivot);
             #pragma omp task shared(nonleaf)
-            nonleaf->children[1] = buildQuadTree(q1, Vec2(pivot.x, bmin.y), Vec2(bmax.x, pivot.y));
+            nonleaf->children[1] = buildQuadTree(std::move(q1), Vec2(pivot.x, bmin.y), Vec2(bmax.x, pivot.y));
             #pragma omp task shared(nonleaf)
-            nonleaf->children[2] = buildQuadTree(q2, Vec2(bmin.x, pivot.y), Vec2(pivot.x, bmax.y));
+            nonleaf->children[2] = buildQuadTree(std::move(q2), Vec2(bmin.x, pivot.y), Vec2(pivot.x, bmax.y));
             #pragma omp task shared(nonleaf)
-            nonleaf->children[3] = buildQuadTree(q3, pivot, bmax);
+            nonleaf->children[3] = buildQuadTree(std::move(q3), pivot, bmax);
+            #pragma omp taskwait
         }
         else{
             nonleaf->children[0] = buildQuadTree(q0, bmin, pivot);
