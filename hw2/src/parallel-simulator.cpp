@@ -17,53 +17,34 @@ class ParallelNBodySimulator : public INBodySimulator
 public:
     // TODO: implement a function that builds and returns a quadtree containing particles.
     // You do not have to preserve this function type.
-    std::shared_ptr<QuadTreeNode> buildQuadTree(std::vector<Particle> & particles, Vec2 bmin, Vec2 bmax, int depth)
+    std::shared_ptr<QuadTreeNode> buildQuadTree(std::vector<Particle> & particles, Vec2 bmin, Vec2 bmax)
     {
         if (particles.size()<QuadTreeLeafSize){
-            // return leaf node
-            auto leaf = std::make_shared<QuadTreeNode>();
-            leaf->isLeaf = true;
-            leaf->particles = particles;
-            return leaf;
+        // return leaf node
+        auto leaf = std::make_shared<QuadTreeNode>();
+        leaf->isLeaf = true;
+        leaf->particles = particles;
+        return leaf;
+       }
+       else{
+        auto nonleaf = std::make_shared<QuadTreeNode>();
+        Vec2 pivot = (bmin + bmax) * 0.5f;
+        std::vector<Particle> q0, q1, q2, q3;
+        for (auto & p : particles) {
+            bool right = p.position.x >= pivot.x;
+            bool below = p.position.y >= pivot.y;
+            if (!right && !below) q0.push_back(p); // top-left
+            else if ( right && !below) q1.push_back(p); // top-right
+            else if (!right &&  below) q2.push_back(p); // bottom-left
+            else q3.push_back(p); // bottom-right
         }
-        else{
-            auto nonleaf = std::make_shared<QuadTreeNode>();
-            Vec2 pivot = (bmin + bmax) * 0.5f;
-            std::vector<Particle> q0, q1, q2, q3;
-            for (auto & p : particles) {
-                bool right = p.position.x >= pivot.x;
-                bool below = p.position.y >= pivot.y;
-                if (!right && !below) q0.push_back(p); // top-left
-                else if ( right && !below) q1.push_back(p); // top-right
-                else if (!right &&  below) q2.push_back(p); // bottom-left
-                else q3.push_back(p); // bottom-right
-            }
 
-            // TODO: check that depth isn't too far down
-           // Only spawn tasks if there's enough work to justify the overhead
-            if (particles.size() >= QuadTreeParallelThreshold) {
-                #pragma omp task shared(nonleaf) firstprivate(q0, bmin, pivot, depth)
-                nonleaf->children[0] = buildQuadTree(q0, bmin, pivot, depth + 1);
+        nonleaf->children[0] = buildQuadTree(q0, bmin, pivot);
+        nonleaf->children[1] = buildQuadTree(q1, Vec2(pivot.x, bmin.y), Vec2(bmax.x, pivot.y));
+        nonleaf->children[2] = buildQuadTree(q2, Vec2(bmin.x, pivot.y), Vec2(pivot.x, bmax.y));
+        nonleaf->children[3] = buildQuadTree(q3, pivot, bmax);
 
-                #pragma omp task shared(nonleaf) firstprivate(q1, bmin, bmax, pivot, depth)
-                nonleaf->children[1] = buildQuadTree(q1, Vec2(pivot.x, bmin.y), Vec2(bmax.x, pivot.y), depth + 1);
-
-                #pragma omp task shared(nonleaf) firstprivate(q2, bmin, bmax, pivot, depth)
-                nonleaf->children[2] = buildQuadTree(q2, Vec2(bmin.x, pivot.y), Vec2(pivot.x, bmax.y), depth + 1);
-
-                #pragma omp task shared(nonleaf) firstprivate(q3, bmin, bmax, pivot, depth)
-                nonleaf->children[3] = buildQuadTree(q3, pivot, bmax, depth + 1);
-
-                #pragma omp taskwait
-            } else {
-                nonleaf->children[0] = buildQuadTree(q0, bmin, pivot, depth + 1);
-                nonleaf->children[1] = buildQuadTree(q1, Vec2(pivot.x, bmin.y), Vec2(bmax.x, pivot.y), depth + 1);
-                nonleaf->children[2] = buildQuadTree(q2, Vec2(bmin.x, pivot.y), Vec2(pivot.x, bmax.y), depth + 1);
-                nonleaf->children[3] = buildQuadTree(q3, pivot, bmax, depth + 1);
-            }
-
-
-            return nonleaf;
+        return nonleaf;
        }
     }
 
@@ -87,11 +68,8 @@ public:
 
         quadTree->bmin = bmin;
         quadTree->bmax = bmax;
-
-        #pragma omp parallel
-        #pragma omp single
         // build nodes
-        quadTree->root = buildQuadTree(particles, bmin, bmax, 0);
+        quadTree->root = buildQuadTree(particles, bmin, bmax);
         if (!quadTree->checkTree()) {
           std::cout << "Your Tree has Error!" << std::endl;
         }
