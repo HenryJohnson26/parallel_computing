@@ -11,7 +11,7 @@
 // and type of simulateStep and buildAccelerationStructure remain the same.
 
 const int QuadTreeLeafSize = 8;
-const int QuadTreeParallelThreshold = 1000;
+const int QuadTreeParallelThreshold = 10000;
 class ParallelNBodySimulator : public INBodySimulator
 {
 public:
@@ -50,10 +50,13 @@ public:
             #pragma omp task shared(nonleaf)
             nonleaf->children[3] = buildQuadTree(q3, pivot, bmax);
         }
-        nonleaf->children[0] = buildQuadTree(q0, bmin, pivot);
-        nonleaf->children[1] = buildQuadTree(q1, Vec2(pivot.x, bmin.y), Vec2(bmax.x, pivot.y));
-        nonleaf->children[2] = buildQuadTree(q2, Vec2(bmin.x, pivot.y), Vec2(pivot.x, bmax.y));
-        nonleaf->children[3] = buildQuadTree(q3, pivot, bmax);
+        else{
+            nonleaf->children[0] = buildQuadTree(q0, bmin, pivot);
+            nonleaf->children[1] = buildQuadTree(q1, Vec2(pivot.x, bmin.y), Vec2(bmax.x, pivot.y));
+            nonleaf->children[2] = buildQuadTree(q2, Vec2(bmin.x, pivot.y), Vec2(pivot.x, bmax.y));
+            nonleaf->children[3] = buildQuadTree(q3, pivot, bmax);
+        }
+
 
         return nonleaf;
        }
@@ -80,7 +83,6 @@ public:
         quadTree->bmin = bmin;
         quadTree->bmax = bmax;
         // build nodes
-        #pragma omp parallel
         #pragma omp single
         quadTree->root = buildQuadTree(particles, bmin, bmax);
         if (!quadTree->checkTree()) {
