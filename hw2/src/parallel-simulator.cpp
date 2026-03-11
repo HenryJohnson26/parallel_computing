@@ -80,7 +80,8 @@ public:
         quadTree->bmin = bmin;
         quadTree->bmax = bmax;
         // build nodes
-        #pragma omp parallel single
+        #pragma omp parallel
+        #pragma omp single
         quadTree->root = buildQuadTree(particles, bmin, bmax);
         if (!quadTree->checkTree()) {
           std::cout << "Your Tree has Error!" << std::endl;
