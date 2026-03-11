@@ -11,7 +11,7 @@
 // and type of simulateStep and buildAccelerationStructure remain the same.
 
 const int QuadTreeLeafSize = 8;
-const int QuadTreeParallelThreshold = 10000;
+const int QuadTreeParallelThreshold = 1000;
 class ParallelNBodySimulator : public INBodySimulator
 {
 public:
@@ -19,7 +19,8 @@ public:
     // You do not have to preserve this function type.
     std::shared_ptr<QuadTreeNode> buildQuadTree(std::vector<Particle> & particles, Vec2 bmin, Vec2 bmax)
     {
-        if (particles.size()<QuadTreeLeafSize){
+        int n = particles.size();
+        if (n<QuadTreeLeafSize){
         // return leaf node
         auto leaf = std::make_shared<QuadTreeNode>();
         leaf->isLeaf = true;
@@ -39,6 +40,16 @@ public:
             else q3.push_back(p); // bottom-right
         }
 
+        if(n>QuadTreeParallelThreshold){
+            #pragma omp task shared(nonleaf)
+            nonleaf->children[0] = buildQuadTree(q0, bmin, pivot);
+            #pragma omp task shared(nonleaf)
+            nonleaf->children[1] = buildQuadTree(q1, Vec2(pivot.x, bmin.y), Vec2(bmax.x, pivot.y));
+            #pragma omp task shared(nonleaf)
+            nonleaf->children[2] = buildQuadTree(q2, Vec2(bmin.x, pivot.y), Vec2(pivot.x, bmax.y));
+            #pragma omp task shared(nonleaf)
+            nonleaf->children[3] = buildQuadTree(q3, pivot, bmax);
+        }
         nonleaf->children[0] = buildQuadTree(q0, bmin, pivot);
         nonleaf->children[1] = buildQuadTree(q1, Vec2(pivot.x, bmin.y), Vec2(bmax.x, pivot.y));
         nonleaf->children[2] = buildQuadTree(q2, Vec2(bmin.x, pivot.y), Vec2(pivot.x, bmax.y));
@@ -69,6 +80,7 @@ public:
         quadTree->bmin = bmin;
         quadTree->bmax = bmax;
         // build nodes
+        #pragma omp parallel single
         quadTree->root = buildQuadTree(particles, bmin, bmax);
         if (!quadTree->checkTree()) {
           std::cout << "Your Tree has Error!" << std::endl;
@@ -88,12 +100,35 @@ public:
         auto qtree = static_cast<QuadTree*>(accel);
         int n = particles.size();
         int threads = omp_get_max_threads();
-        if (n < 10000){
+        if (n < 1000){
             #pragma omp parallel num_threads(8)
             {
                 std::vector<Particle> local_ps;
+                local_ps.reserve(32);
+                #pragma omp for schedule(dynamic, 32)
+                for(int i = 0; i < n; i++){
+                    Particle& p = particles[i];
+                    local_ps.clear();
+                    qtree->getParticles(local_ps, p.position, params.cullRadius);
+                    int n = local_ps.size();
+                    {
+                        Vec2 force(0.0f, 0.0f);
+                        for (auto & other : local_ps){
+                            if(other.id != p.id){
+                                force = force + computeForce(p, other, params.cullRadius);
+                            }
+                        }
+                        newParticles[i] = updateParticle(p, force, params.deltaTime);
+                    }
+                }
+            }
+        }
+        else if (n < 10000){
+            #pragma omp parallel num_threads(16)
+            {
+                std::vector<Particle> local_ps;
                 local_ps.reserve(64);
-                #pragma omp for schedule(static)
+                #pragma omp for schedule(dynamic, 64)
                 for(int i = 0; i < n; i++){
                     Particle& p = particles[i];
                     local_ps.clear();
@@ -115,8 +150,8 @@ public:
             #pragma omp parallel
             {
                 std::vector<Particle> local_ps;
-                local_ps.reserve(64);
-                #pragma omp for schedule(dynamic, 64)
+                local_ps.reserve(128);
+                #pragma omp for schedule(dynamic, 128)
                 for(int i = 0; i < n; i++){
                     Particle& p = particles[i];
                     local_ps.clear();
